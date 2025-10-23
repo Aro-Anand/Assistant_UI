@@ -1,3 +1,4 @@
+// thread.tsx
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -40,7 +41,7 @@ import {
 import { cn } from "@/lib/utils";
 
 // ========================================
-// LATEX UTILITIES - ADD THESE
+// LATEX UTILITIES
 // ========================================
 
 function extractLatexCode(text: string): string | null {
@@ -49,7 +50,6 @@ function extractLatexCode(text: string): string | null {
 }
 
 function createOverleafProject(latexCode: string, projectName: string) {
-  // Create a shareable Overleaf link
   const encodedCode = btoa(latexCode);
   const overleafUrl = `https://www.overleaf.com/docs?snip_uri=data:application/x-latex;base64,${encodedCode}`;
   window.open(overleafUrl, '_blank');
@@ -68,7 +68,7 @@ function downloadLatexFile(latexCode: string, filename: string = 'book.tex') {
 }
 
 // ========================================
-// LATEX PREVIEW COMPONENT - ADD THIS
+// LATEX PREVIEW COMPONENT
 // ========================================
 
 const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, fullText }) => {
@@ -105,22 +105,18 @@ const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, 
     }
   };
 
-  // Extract text before and after the code block
   const textBeforeCode = fullText.split('```latex')[0];
   const textAfterCode = fullText.split('```')[2] || '';
 
   return (
     <div className="my-4">
-      {/* Text before code block */}
       {textBeforeCode && (
         <div className="mb-4 prose prose-sm max-w-none dark:prose-invert">
           <MarkdownText part={{ type: 'text', text: textBeforeCode }} />
         </div>
       )}
 
-      {/* LaTeX Code Block */}
       <div className="border rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-900">
-        {/* Toolbar */}
         <div className="bg-gray-100 dark:bg-gray-800 border-b px-4 py-2 flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <FileCode2 className="h-4 w-4" />
@@ -129,7 +125,6 @@ const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, 
           
           <div className="flex-1" />
           
-          {/* View Toggle */}
           <div className="flex gap-1 border rounded-md p-0.5 bg-white dark:bg-gray-900">
             <button
               onClick={() => setView('code')}
@@ -155,7 +150,6 @@ const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, 
             </button>
           </div>
 
-          {/* Action Buttons */}
           <Button
             size="sm"
             variant="outline"
@@ -197,7 +191,6 @@ const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, 
           </Button>
         </div>
 
-        {/* Content */}
         <div className="max-h-96 overflow-auto">
           {view === 'code' ? (
             <pre className="p-4 text-xs leading-relaxed">
@@ -216,7 +209,6 @@ const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, 
         </div>
       </div>
 
-      {/* Text after code block */}
       {textAfterCode && (
         <div className="mt-4 prose prose-sm max-w-none dark:prose-invert">
           <MarkdownText part={{ type: 'text', text: textAfterCode }} />
@@ -227,7 +219,7 @@ const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, 
 };
 
 // ========================================
-// EXISTING COMPONENTS (KEEP AS IS)
+// MAIN THREAD COMPONENT
 // ========================================
 
 export const Thread: FC = () => {
@@ -279,6 +271,10 @@ const ThreadScrollToBottom: FC = () => {
   );
 };
 
+// ========================================
+// THREAD WELCOME
+// ========================================
+
 const ThreadWelcome: FC = () => {
   return (
     <div className="aui-thread-welcome-root mx-auto my-auto flex w-full max-w-[var(--thread-max-width)] flex-grow flex-col">
@@ -299,7 +295,7 @@ const ThreadWelcome: FC = () => {
             transition={{ delay: 0.1 }}
             className="aui-thread-welcome-message-motion-2 text-2xl text-muted-foreground/65"
           >
-            Upload PDFs and I'll help you generate LaTeX book chapters
+            Upload PDFs and generate LaTeX book chapters (Powered by OpenWebUI)
           </m.div>
         </div>
       </div>
@@ -343,7 +339,8 @@ const ThreadSuggestions: FC = () => {
         >
           <ThreadPrimitive.Suggestion
             prompt={suggestedAction.action}
-            send
+            method="replace"
+            autoSend
             asChild
           >
             <Button
@@ -432,10 +429,6 @@ const MessageError: FC = () => {
   );
 };
 
-// ========================================
-// MODIFIED ASSISTANT MESSAGE - THIS IS THE KEY CHANGE
-// ========================================
-
 const AssistantMessage: FC = () => {
   return (
     <MessagePrimitive.Root asChild>
@@ -444,24 +437,25 @@ const AssistantMessage: FC = () => {
         data-role="assistant"
       >
         <div className="aui-assistant-message-content mx-2 leading-7 break-words text-foreground">
-          <MessagePrimitive.Parts
+          <MessagePrimitive.Content
             components={{
               Text: (props) => {
-                // Safety check: ensure part exists and has text
-                if (!props?.part?.text) {
+                // Get the text content - handle both formats
+                const text = props?.part?.text || props?.text || '';
+                
+                console.log('📝 Rendering text part:', { text, part: props?.part });
+                
+                if (!text) {
                   return <MarkdownText {...props} />;
                 }
                 
-                // Check if this text contains LaTeX code
-                const latexCode = extractLatexCode(props.part.text);
+                const latexCode = extractLatexCode(text);
                 
                 if (latexCode) {
-                  // Render with LaTeX preview component
-                  return <LaTeXPreview latexCode={latexCode} fullText={props.part.text} />;
+                  return <LaTeXPreview latexCode={latexCode} fullText={text} />;
                 }
                 
-                // Default markdown rendering
-                return <MarkdownText {...props} />;
+                return <MarkdownText part={{ type: 'text', text }} />;
               },
               tools: { Fallback: ToolFallback },
             }}
@@ -478,17 +472,13 @@ const AssistantMessage: FC = () => {
   );
 };
 
-// ========================================
-// REST OF THE COMPONENTS (UNCHANGED)
-// ========================================
-
 const AssistantActionBar: FC = () => {
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
       autohide="not-last"
       autohideFloat="single-branch"
-      className="aui-assistant-action-bar-root col-start-3 row-start-2 -ml-1 flex gap-1 text-muted-foreground data-floating:absolute data-floating:rounded-md data-floating:border data-floating:bg-background data-floating:p-1 data-floating:shadow-sm"
+      className="aui-assistant-action-bar-root col-start-3 row-start-2 -ml-1 flex gap-1 text-muted-foreground data-[floating]:absolute data-[floating]:rounded-md data-[floating]:border data-[floating]:bg-background data-[floating]:p-1 data-[floating]:shadow-sm"
     >
       <ActionBarPrimitive.Copy asChild>
         <TooltipIconButton tooltip="Copy">
@@ -520,7 +510,7 @@ const UserMessage: FC = () => {
 
         <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
           <div className="aui-user-message-content rounded-3xl bg-muted px-5 py-2.5 break-words text-foreground">
-            <MessagePrimitive.Parts />
+            <MessagePrimitive.Content />
           </div>
           <div className="aui-user-action-bar-wrapper absolute top-1/2 left-0 -translate-x-full -translate-y-1/2 pr-2">
             <UserActionBar />

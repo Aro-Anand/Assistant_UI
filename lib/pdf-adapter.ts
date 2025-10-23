@@ -3,9 +3,10 @@ import {
   PendingAttachment,
   CompleteAttachment,
 } from "@assistant-ui/react";
+import { OPENWEBUI_CONFIG, OPENWEBUI_ENDPOINTS } from './openwebui-config';
 
 export class PDFAttachmentAdapter implements AttachmentAdapter {
-  accept = "application/pdf";
+  accept = "application/pdf,.pdf,.doc,.docx,.txt,.tex";
 
   async add({ file }: { file: File }): Promise<PendingAttachment> {
     // Validate file size (20MB limit)
@@ -19,7 +20,7 @@ export class PDFAttachmentAdapter implements AttachmentAdapter {
         status: {
           type: "incomplete",
           reason: "error",
-          error: new Error("PDF size exceeds 20MB limit"),
+          error: new Error("File size exceeds 20MB limit"),
         },
       };
     }
@@ -35,42 +36,68 @@ export class PDFAttachmentAdapter implements AttachmentAdapter {
 
   async send(attachment: PendingAttachment): Promise<CompleteAttachment> {
     try {
-      // Convert PDF to base64
-      const base64Data = await this.fileToBase64(attachment.file);
+      // Upload to OpenWebUI
+      const formData = new FormData();
+      formData.append('file', attachment.file);
+
+      const response = await fetch(
+        `${OPENWEBUI_CONFIG.baseUrl}${OPENWEBUI_ENDPOINTS.uploadFile}`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${OPENWEBUI_CONFIG.apiKey}`,
+            'Accept': 'application/json',
+          },
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`File upload failed: ${error}`);
+      }
+
+      const result = await response.json();
+      const fileId = result.id;
+
+      console.log('File uploaded to OpenWebUI:', fileId);
 
       return {
-        id: attachment.id,
+        id: fileId, // Use OpenWebUI's file ID
         type: "document",
         name: attachment.name,
         content: [
           {
             type: "file",
-            data: `data:application/pdf;base64,${base64Data}`,
-            mimeType: "application/pdf",
+            data: fileId, // Store OpenWebUI file ID
+            mimeType: attachment.file.type,
           },
         ],
         status: { type: "complete" },
       };
     } catch (error) {
       throw new Error(
-        `Failed to process PDF: ${error instanceof Error ? error.message : "Unknown error"}`
+        `Failed to upload file to OpenWebUI: ${error instanceof Error ? error.message : "Unknown error"}`
       );
     }
   }
 
   async remove(attachment: PendingAttachment): Promise<void> {
-    // Cleanup if needed
-  }
-
-  private async fileToBase64(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64 = (reader.result as string).split(",")[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+    // Optionally delete from OpenWebUI
+    try {
+      if (attachment.id) {
+        await fetch(
+          `${OPENWEBUI_CONFIG.baseUrl}${OPENWEBUI_ENDPOINTS.files}/${attachment.id}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${OPENWEBUI_CONFIG.apiKey}`,
+            },
+          }
+        );
+      }
+    } catch (error) {
+      console.error('Failed to delete file from OpenWebUI:', error);
+    }
   }
 }
