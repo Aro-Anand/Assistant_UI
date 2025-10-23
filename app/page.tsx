@@ -1,5 +1,11 @@
-import { Assistant } from "./assistant";
+'use client';
+
+import { Thread } from '@/components/assistant-ui/thread';
 
 export default function Home() {
-  return <Assistant />;
+  return (
+    <div className="h-screen">
+      <Thread />
+    </div>
+  );
 }
