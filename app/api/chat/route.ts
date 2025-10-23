@@ -10,44 +10,46 @@ export async function POST(req: NextRequest) {
     
     console.log('Received messages:', JSON.stringify(messages, null, 2));
 
-    // Extract file IDs from messages if any
-    const fileIds: string[] = [];
+    // Convert messages to OpenWebUI format
+    const convertedMessages = messages.map((msg: any) => {
+      let content = '';
+      
+      if (typeof msg.content === 'string') {
+        content = msg.content;
+      } else if (msg.parts && Array.isArray(msg.parts)) {
+        content = msg.parts
+          .filter((part: any) => part.type === 'text')
+          .map((part: any) => part.text)
+          .join('');
+      }
+      
+      return {
+        role: msg.role,
+        content: content,
+      };
+    });
+
+    // Extract files
+    const files: any[] = [];
     messages.forEach((msg: any) => {
-      if (msg.files && Array.isArray(msg.files)) {
-        fileIds.push(...msg.files.map((f: any) => f.id));
+      if (msg.parts && Array.isArray(msg.parts)) {
+        msg.parts.forEach((part: any) => {
+          if (part.type === 'file') {
+            files.push({ type: 'file', id: part.data || part.id });
+          }
+        });
       }
     });
 
-    // Prepare OpenWebUI-compatible request
     const openWebUIRequest: any = {
       model: process.env.NEXT_PUBLIC_DEFAULT_MODEL || 'gpt-4o-mini',
-      messages: messages.map((msg: any) => {
-        // Extract content from message
-        let content = '';
-        
-        if (msg.content) {
-          content = msg.content;
-        } else if (msg.parts && Array.isArray(msg.parts)) {
-          content = msg.parts
-            .filter((part: any) => part.type === 'text')
-            .map((part: any) => part.text)
-            .join('');
-        }
-        
-        return {
-          role: msg.role,
-          content: content,
-        };
-      }),
+      messages: convertedMessages,
       stream: true,
     };
 
-    // Add files to request if any
-    if (fileIds.length > 0) {
-      openWebUIRequest.files = fileIds.map(id => ({
-        type: 'file',
-        id: id,
-      }));
+    if (files.length > 0) {
+      openWebUIRequest.files = files;
+      console.log('Including files in request:', files);
     }
 
     console.log('Sending to OpenWebUI:', JSON.stringify(openWebUIRequest, null, 2));
@@ -74,7 +76,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Get the reader from OpenWebUI response
     const reader = response.body?.getReader();
     if (!reader) {
       return Response.json(
@@ -83,100 +84,49 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    const encoder = new TextEncoder();
     const decoder = new TextDecoder();
     
-    // Create a transform stream to convert OpenAI format to AI SDK UI Message Stream format
+    // Create a simple text stream
     const stream = new ReadableStream({
       async start(controller) {
         let buffer = '';
-        
-        // Helper to send data in AI SDK format
-        const sendData = (content: string) => {
-          // AI SDK UI Message Stream format
-          const data = `0:${JSON.stringify(content)}\n`;
-          controller.enqueue(encoder.encode(data));
-        };
         
         try {
           while (true) {
             const { done, value } = await reader.read();
             
-            if (done) {
-              // Process any remaining buffer
-              if (buffer.trim()) {
-                const lines = buffer.split('\n');
-                for (const line of lines) {
-                  if (!line.trim() || !line.startsWith('data: ')) continue;
-                  
-                  const data = line.slice(6);
-                  if (data !== '[DONE]') {
-                    try {
-                      const parsed = JSON.parse(data);
-                      if (parsed.choices?.[0]?.delta?.content) {
-                        const content = parsed.choices[0].delta.content;
-                        sendData(content);
-                        console.log('Streaming content:', content);
-                      }
-                    } catch (e) {
-                      console.error('Error parsing final chunk:', e);
-                    }
-                  }
-                }
-              }
-              
-              // Send finish message in AI SDK format
-              const finishData = `d:${JSON.stringify({ finishReason: 'stop' })}\n`;
-              controller.enqueue(encoder.encode(finishData));
-              controller.close();
-              break;
-            }
+            if (done) break;
             
             const chunk = decoder.decode(value, { stream: true });
             buffer += chunk;
             
-            // Process complete lines
             const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // Keep incomplete line in buffer
+            buffer = lines.pop() || '';
             
             for (const line of lines) {
-              if (!line.trim()) continue;
+              if (!line.trim() || !line.startsWith('data: ')) continue;
               
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6);
+              const data = line.slice(6).trim();
+              if (data === '[DONE]') continue;
+              
+              try {
+                const parsed = JSON.parse(data);
                 
-                if (data === '[DONE]') {
-                  // Send finish message
-                  const finishData = `d:${JSON.stringify({ finishReason: 'stop' })}\n`;
-                  controller.enqueue(encoder.encode(finishData));
-                  controller.close();
-                  return;
+                if (parsed.choices?.[0]?.delta?.content) {
+                  const content = parsed.choices[0].delta.content;
+                  controller.enqueue(new TextEncoder().encode(content));
+                  console.log('Streaming content:', content);
                 }
-                
-                try {
-                  const parsed = JSON.parse(data);
-                  
-                  // Extract content from the delta
-                  if (parsed.choices?.[0]?.delta?.content) {
-                    const content = parsed.choices[0].delta.content;
-                    sendData(content);
-                    console.log('Streaming content:', content);
-                  }
-                } catch (e) {
-                  console.error('Error parsing chunk:', e, 'Line:', line);
-                }
+              } catch (e) {
+                console.error('Error parsing chunk:', e);
               }
             }
           }
+          
+          controller.close();
         } catch (error) {
           console.error('Stream error:', error);
           controller.error(error);
-        } finally {
-          try {
-            reader.releaseLock();
-          } catch (e) {
-            // Ignore lock errors
-          }
         }
       },
       
@@ -185,14 +135,15 @@ export async function POST(req: NextRequest) {
       }
     });
     
+    // Use standard Response with proper headers for text streaming
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
-        'X-Vercel-AI-Data-Stream': 'v1',
-        'Cache-Control': 'no-cache, no-transform',
+        'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
       },
     });
+    
   } catch (error) {
     console.error('Error in chat API:', error);
     return Response.json(
