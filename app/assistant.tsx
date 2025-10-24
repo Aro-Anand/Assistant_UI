@@ -1,10 +1,7 @@
 "use client";
 
+import { useChatRuntime } from "@assistant-ui/react-ai-sdk";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import {
-  useChatRuntime,
-  AssistantChatTransport,
-} from "@assistant-ui/react-ai-sdk";
 import { Thread } from "@/components/assistant-ui/thread";
 import {
   SidebarInset,
@@ -22,12 +19,8 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 
-export const Assistant = () => {
-  const runtime = useChatRuntime({
-    transport: new AssistantChatTransport({
-      api: "/api/chat",
-    }),
-  });
+export function Assistant() {
+  const runtime = useChatRuntime();
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -46,12 +39,12 @@ export const Assistant = () => {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      Build Your Own ChatGPT UX
+                      Book Generation Assistant
                     </BreadcrumbLink>
                   </BreadcrumbItem>
                   <BreadcrumbSeparator className="hidden md:block" />
                   <BreadcrumbItem>
-                    <BreadcrumbPage>Starter Template</BreadcrumbPage>
+                    <BreadcrumbPage>LaTeX Generator</BreadcrumbPage>
                   </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>
@@ -64,4 +57,6 @@ export const Assistant = () => {
       </SidebarProvider>
     </AssistantRuntimeProvider>
   );
-};
+}
+
+export default Assistant;

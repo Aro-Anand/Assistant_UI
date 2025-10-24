@@ -112,7 +112,7 @@ const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, 
     <div className="my-4">
       {textBeforeCode && (
         <div className="mb-4 prose prose-sm max-w-none dark:prose-invert">
-          <MarkdownText part={{ type: 'text', text: textBeforeCode }} />
+          <MarkdownText />
         </div>
       )}
 
@@ -211,11 +211,49 @@ const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, 
 
       {textAfterCode && (
         <div className="mt-4 prose prose-sm max-w-none dark:prose-invert">
-          <MarkdownText part={{ type: 'text', text: textAfterCode }} />
+          <MarkdownText />
         </div>
       )}
     </div>
   );
+};
+
+// ========================================
+// CUSTOM TEXT RENDERER
+// ========================================
+
+const CustomTextRenderer: FC<any> = (props) => {
+  // Extract text from various possible formats
+  let text = '';
+  
+  // Debug: log the full props structure
+  console.log('📝 CustomTextRenderer - Full props:', JSON.stringify(props, null, 2));
+  
+  // Try all possible text locations
+  if (typeof props.part?.text === 'string') {
+    text = props.part.text;
+  } else if (typeof props.text === 'string') {
+    text = props.text;
+  } else if (typeof props.content === 'string') {
+    text = props.content;
+  } else if (props.part?.type === 'text' && typeof props.part?.content === 'string') {
+    text = props.part.content;
+  } else if (props.children && typeof props.children === 'string') {
+    text = props.children;
+  }
+
+  console.log('📝 Extracted text:', text);
+
+  // Always render MarkdownText with the original props
+  // This ensures the default rendering works
+  const latexCode = text ? extractLatexCode(text) : null;
+
+  if (latexCode) {
+    return <LaTeXPreview latexCode={latexCode} fullText={text} />;
+  }
+
+  // Let MarkdownText handle the rendering with original props
+  return <MarkdownText {...props} />;
 };
 
 // ========================================
@@ -437,26 +475,9 @@ const AssistantMessage: FC = () => {
         data-role="assistant"
       >
         <div className="aui-assistant-message-content mx-2 leading-7 break-words text-foreground">
-          <MessagePrimitive.Content
+          <MessagePrimitive.Parts
             components={{
-              Text: (props) => {
-                // Get the text content - handle both formats
-                const text = props?.part?.text || props?.text || '';
-                
-                console.log('📝 Rendering text part:', { text, part: props?.part });
-                
-                if (!text) {
-                  return <MarkdownText {...props} />;
-                }
-                
-                const latexCode = extractLatexCode(text);
-                
-                if (latexCode) {
-                  return <LaTeXPreview latexCode={latexCode} fullText={text} />;
-                }
-                
-                return <MarkdownText part={{ type: 'text', text }} />;
-              },
+              Text: MarkdownText,
               tools: { Fallback: ToolFallback },
             }}
           />
@@ -510,7 +531,7 @@ const UserMessage: FC = () => {
 
         <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
           <div className="aui-user-message-content rounded-3xl bg-muted px-5 py-2.5 break-words text-foreground">
-            <MessagePrimitive.Content />
+            <MessagePrimitive.Parts />
           </div>
           <div className="aui-user-action-bar-wrapper absolute top-1/2 left-0 -translate-x-full -translate-y-1/2 pr-2">
             <UserActionBar />
