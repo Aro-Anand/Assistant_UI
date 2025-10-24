@@ -1,7 +1,7 @@
 "use client";
 
-import { useChatRuntime } from "@assistant-ui/react-ai-sdk";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import { useChatRuntime } from "@assistant-ui/react-ai-sdk";
 import { Thread } from "@/components/assistant-ui/thread";
 import {
   SidebarInset,
@@ -20,7 +20,10 @@ import {
 } from "@/components/ui/breadcrumb";
 
 export function Assistant() {
-  const runtime = useChatRuntime();
+  // CRITICAL: Use useChatRuntime with simple api endpoint
+  const runtime = useChatRuntime({
+    api: "/api/chat",
+  });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>

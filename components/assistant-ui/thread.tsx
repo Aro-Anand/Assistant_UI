@@ -40,6 +40,17 @@ import {
 
 import { cn } from "@/lib/utils";
 
+import { DebugTextRenderer } from "@/components/assistant-ui/debug-text-renderer";
+import {
+  useAssistantState,
+} from "@assistant-ui/react";
+<MessagePrimitive.Parts
+  components={{
+    Text: DebugTextRenderer,  // Use this temporarily
+    tools: { Fallback: ToolFallback },
+  }}
+/>
+
 // ========================================
 // LATEX UTILITIES
 // ========================================
@@ -224,23 +235,24 @@ const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, 
 
 const CustomTextRenderer: FC<any> = (props) => {
   // Extract text from various possible formats
-  let text = '';
+  // let text = '';
+  const text = props.part?.text || '';
   
   // Debug: log the full props structure
   console.log('📝 CustomTextRenderer - Full props:', JSON.stringify(props, null, 2));
   
-  // Try all possible text locations
-  if (typeof props.part?.text === 'string') {
-    text = props.part.text;
-  } else if (typeof props.text === 'string') {
-    text = props.text;
-  } else if (typeof props.content === 'string') {
-    text = props.content;
-  } else if (props.part?.type === 'text' && typeof props.part?.content === 'string') {
-    text = props.part.content;
-  } else if (props.children && typeof props.children === 'string') {
-    text = props.children;
-  }
+  // // Try all possible text locations
+  // if (typeof props.part?.text === 'string') {
+  //   text = props.part.text;
+  // } else if (typeof props.text === 'string') {
+  //   text = props.text;
+  // } else if (typeof props.content === 'string') {
+  //   text = props.content;
+  // } else if (props.part?.type === 'text' && typeof props.part?.content === 'string') {
+  //   text = props.part.content;
+  // } else if (props.children && typeof props.children === 'string') {
+  //   text = props.children;
+  // }
 
   console.log('📝 Extracted text:', text);
 
@@ -475,6 +487,7 @@ const AssistantMessage: FC = () => {
         data-role="assistant"
       >
         <div className="aui-assistant-message-content mx-2 leading-7 break-words text-foreground">
+          {/* CRITICAL: Use MessagePrimitive.Parts with MarkdownText for Text component */}
           <MessagePrimitive.Parts
             components={{
               Text: MarkdownText,
