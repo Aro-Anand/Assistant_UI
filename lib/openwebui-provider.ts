@@ -1,6 +1,27 @@
 // lib/openwebui-provider.ts
 import { LanguageModelV1 } from "ai";
 
+interface MessagePart {
+  type: string;
+  text?: string;
+  url?: string;
+  mediaType?: string;
+  filename?: string;
+}
+
+interface Message {
+  role: string;
+  parts: MessagePart[];
+}
+
+interface ProviderOptions {
+  prompt: Array<{
+    role: string;
+    content: MessagePart[];
+  }>;
+  abortSignal: AbortSignal;
+}
+
 export function createOpenWebUIProvider(config: {
   baseURL: string;
   apiKey: string;
@@ -11,12 +32,23 @@ export function createOpenWebUIProvider(config: {
     modelId: "default",
     defaultObjectGenerationMode: "json" as const,
 
-    async doGenerate(options) {
+    async doGenerate(options: ProviderOptions) {
       const { prompt, abortSignal } = options;
       
-      const messages = prompt.map((msg: any) => ({
+      const messages: Message[] = prompt.map((msg) => ({
         role: msg.role,
-        content: msg.content.map((part: any) => part.text).join(""),
+        parts: msg.content.map((part: MessagePart) => {
+          if (part.type === 'text') return { type: 'text', text: part.text };
+          if (part.type === 'file') {
+            return {
+              type: 'file',
+              url: part.url,
+              mediaType: part.mediaType,
+              filename: part.filename
+            };
+          }
+          return part;
+        })
       }));
 
       const response = await fetch(`${config.baseURL}/api/chat/completions`, {
@@ -27,7 +59,14 @@ export function createOpenWebUIProvider(config: {
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
-          messages,
+          messages: messages.map(msg => ({
+            role: msg.role,
+            content: msg.parts.map(part => {
+              if (part.type === 'text') return part.text || '';
+              if (part.type === 'file') return `[File: ${part.filename}]\n${part.url || ''}`;
+              return '';
+            }).join(' ')
+          })),
           stream: false,
         }),
         signal: abortSignal,
@@ -50,12 +89,23 @@ export function createOpenWebUIProvider(config: {
       };
     },
 
-    async doStream(options) {
+    async doStream(options: ProviderOptions) {
       const { prompt, abortSignal } = options;
       
-      const messages = prompt.map((msg: any) => ({
+      const messages: Message[] = prompt.map((msg) => ({
         role: msg.role,
-        content: msg.content.map((part: any) => part.text).join(""),
+        parts: msg.content.map((part: MessagePart) => {
+          if (part.type === 'text') return { type: 'text', text: part.text };
+          if (part.type === 'file') {
+            return {
+              type: 'file',
+              url: part.url,
+              mediaType: part.mediaType,
+              filename: part.filename
+            };
+          }
+          return part;
+        })
       }));
 
       const response = await fetch(`${config.baseURL}/api/chat/completions`, {
@@ -66,7 +116,14 @@ export function createOpenWebUIProvider(config: {
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
-          messages,
+          messages: messages.map(msg => ({
+            role: msg.role,
+            content: msg.parts.map(part => {
+              if (part.type === 'text') return part.text || '';
+              if (part.type === 'file') return `[File: ${part.filename}]\n${part.url || ''}`;
+              return '';
+            }).join(' ')
+          })),
           stream: true,
         }),
         signal: abortSignal,

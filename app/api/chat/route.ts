@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
 
     const openWebUIRequest = {
       model: process.env.NEXT_PUBLIC_DEFAULT_MODEL || 'gpt-4o-mini',
+      // system:"Give all output in the latex code format",
       messages: convertedMessages,
       stream: true,
     };
