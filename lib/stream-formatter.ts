@@ -1,4 +1,4 @@
-import type { ChatModelAdapter } from "@assistant-ui/react";
+import type { AIAdapter } from "@assistant-ui/react";
 
 export class OpenWebUIAdapter implements ChatModelAdapter {
   constructor(private apiEndpoint: string) {

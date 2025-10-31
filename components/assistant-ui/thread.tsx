@@ -1,4 +1,4 @@
-// thread.tsx
+// components/assistant-ui/thread.tsx - With Enhanced LaTeX Viewer
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -12,6 +12,8 @@ import {
   FileCode2,
   Download,
   ExternalLink,
+  Eye,
+  Code,
 } from "lucide-react";
 
 import {
@@ -21,6 +23,7 @@ import {
   ErrorPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  type TextContentPartComponent,
 } from "@assistant-ui/react";
 
 import type { FC } from "react";
@@ -40,42 +43,51 @@ import {
 
 import { cn } from "@/lib/utils";
 
-import { DebugTextRenderer } from "@/components/assistant-ui/debug-text-renderer";
-import {
-  useAssistantState,
-} from "@assistant-ui/react";
-<MessagePrimitive.Parts
-  components={{
-    Text: DebugTextRenderer,  // Use this temporarily
-    tools: { Fallback: ToolFallback },
-  }}
-/>
-
 // ========================================
 // LATEX UTILITIES
 // ========================================
 
 function extractLatexCode(text: string): string | null {
-  const latexMatch = text.match(/```latex\n([\s\S]*?)```/);
+  // Match both ```latex and ```tex code blocks
+  const latexMatch = text.match(/```(?:latex|tex)\n([\s\S]*?)```/);
   return latexMatch ? latexMatch[1] : null;
 }
 
-function createOverleafProject(latexCode: string, projectName: string) {
-  const encodedCode = btoa(latexCode);
-  const overleafUrl = `https://www.overleaf.com/docs?snip_uri=data:application/x-latex;base64,${encodedCode}`;
-  window.open(overleafUrl, '_blank');
+function createOverleafProject(latexCode: string) {
+  try {
+    // Create a proper Overleaf-compatible base64 encoded URL
+    const encodedCode = btoa(unescape(encodeURIComponent(latexCode)));
+    const overleafUrl = `https://www.overleaf.com/docs?snip_uri=data:application/x-latex;base64,${encodedCode}`;
+    window.open(overleafUrl, '_blank', 'noopener,noreferrer');
+  } catch (error) {
+    console.error('Failed to create Overleaf project:', error);
+    alert('Failed to open in Overleaf. Please try downloading the .tex file instead.');
+  }
 }
 
-function downloadLatexFile(latexCode: string, filename: string = 'book.tex') {
-  const blob = new Blob([latexCode], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+function downloadLatexFile(latexCode: string, filename: string = 'document.tex') {
+  try {
+    const blob = new Blob([latexCode], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Failed to download file:', error);
+    alert('Failed to download file.');
+  }
+}
+
+function copyToClipboard(text: string) {
+  navigator.clipboard.writeText(text).then(() => {
+    console.log('✅ Copied to clipboard');
+  }).catch(err => {
+    console.error('❌ Failed to copy:', err);
+  });
 }
 
 // ========================================
@@ -83,8 +95,9 @@ function downloadLatexFile(latexCode: string, filename: string = 'book.tex') {
 // ========================================
 
 const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, fullText }) => {
-  const [view, setView] = useState<'code' | 'text'>('code');
+  const [view, setView] = useState<'code' | 'preview'>('code');
   const [isCompiling, setIsCompiling] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const handleCompileToPDF = async () => {
     setIsCompiling(true);
@@ -103,69 +116,91 @@ const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, 
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'book.pdf';
+      a.download = 'document.pdf';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Compilation error:', error);
-      alert('Failed to compile PDF. You can download the .tex file and compile it locally or in Overleaf.');
+      alert('PDF compilation is not available. Download the .tex file and compile it locally or in Overleaf.');
     } finally {
       setIsCompiling(false);
     }
   };
 
-  const textBeforeCode = fullText.split('```latex')[0];
+  const handleCopy = () => {
+    copyToClipboard(latexCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Split text before and after LaTeX code
+  const textBeforeCode = fullText.split(/```(?:latex|tex)/)[0];
   const textAfterCode = fullText.split('```')[2] || '';
 
   return (
-    <div className="my-4">
-      {textBeforeCode && (
-        <div className="mb-4 prose prose-sm max-w-none dark:prose-invert">
-          <MarkdownText />
+    <div className="my-4 space-y-4">
+      {textBeforeCode.trim() && (
+        <div className="prose prose-sm max-w-none dark:prose-invert">
+          <p className="text-foreground">{textBeforeCode.trim()}</p>
         </div>
       )}
 
-      <div className="border rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-900">
-        <div className="bg-gray-100 dark:bg-gray-800 border-b px-4 py-2 flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
+      <div className="border rounded-lg overflow-hidden bg-muted/30 dark:bg-muted/10">
+        {/* Toolbar */}
+        <div className="bg-muted/50 dark:bg-muted/30 border-b px-4 py-2.5 flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
             <FileCode2 className="h-4 w-4" />
-            <span className="text-sm font-medium">LaTeX Document</span>
+            <span>LaTeX Document</span>
           </div>
           
           <div className="flex-1" />
           
-          <div className="flex gap-1 border rounded-md p-0.5 bg-white dark:bg-gray-900">
+          {/* View Toggle */}
+          <div className="flex gap-0.5 border rounded-md p-0.5 bg-background">
             <button
               onClick={() => setView('code')}
               className={cn(
-                "px-3 py-1 text-xs rounded transition-colors",
+                "px-3 py-1 text-xs rounded flex items-center gap-1.5 transition-colors",
                 view === 'code' 
-                  ? 'bg-gray-200 dark:bg-gray-700' 
-                  : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+                  ? 'bg-primary text-primary-foreground' 
+                  : 'hover:bg-muted'
               )}
             >
+              <Code className="h-3 w-3" />
               Code
             </button>
             <button
-              onClick={() => setView('text')}
+              onClick={() => setView('preview')}
               className={cn(
-                "px-3 py-1 text-xs rounded transition-colors",
-                view === 'text' 
-                  ? 'bg-gray-200 dark:bg-gray-700' 
-                  : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+                "px-3 py-1 text-xs rounded flex items-center gap-1.5 transition-colors",
+                view === 'preview' 
+                  ? 'bg-primary text-primary-foreground' 
+                  : 'hover:bg-muted'
               )}
             >
+              <Eye className="h-3 w-3" />
               Preview
             </button>
           </div>
+
+          {/* Action Buttons */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleCopy}
+            className="h-7 text-xs"
+          >
+            {copied ? <CheckIcon className="h-3 w-3 mr-1" /> : <CopyIcon className="h-3 w-3 mr-1" />}
+            {copied ? 'Copied!' : 'Copy'}
+          </Button>
 
           <Button
             size="sm"
             variant="outline"
             onClick={() => downloadLatexFile(latexCode)}
-            className="h-8 text-xs"
+            className="h-7 text-xs"
           >
             <Download className="h-3 w-3 mr-1" />
             .tex
@@ -174,8 +209,8 @@ const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, 
           <Button
             size="sm"
             variant="outline"
-            onClick={() => createOverleafProject(latexCode, 'Generated Book')}
-            className="h-8 text-xs bg-green-500 hover:bg-green-600 text-white border-green-600"
+            onClick={() => createOverleafProject(latexCode)}
+            className="h-7 text-xs bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-700"
           >
             <ExternalLink className="h-3 w-3 mr-1" />
             Overleaf
@@ -186,7 +221,7 @@ const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, 
             variant="default"
             onClick={handleCompileToPDF}
             disabled={isCompiling}
-            className="h-8 text-xs"
+            className="h-7 text-xs"
           >
             {isCompiling ? (
               <>
@@ -202,27 +237,34 @@ const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, 
           </Button>
         </div>
 
-        <div className="max-h-96 overflow-auto">
+        {/* Content */}
+        <div className="max-h-[32rem] overflow-auto">
           {view === 'code' ? (
-            <pre className="p-4 text-xs leading-relaxed">
+            <pre className="p-4 text-xs leading-relaxed font-mono text-foreground">
               <code className="language-latex">{latexCode}</code>
             </pre>
           ) : (
             <div className="p-4 prose prose-sm max-w-none dark:prose-invert">
-              <p className="text-muted-foreground italic text-sm">
-                LaTeX preview is simplified. Download the .tex file or open in Overleaf to see the full formatted output.
+              <p className="text-muted-foreground italic text-sm mb-3">
+                This is a simplified preview. For full LaTeX rendering with proper formatting, 
+                download the .tex file or open it in Overleaf.
               </p>
-              <div className="mt-4 whitespace-pre-wrap text-xs font-mono">
-                {latexCode.substring(0, 500)}...
+              <div className="mt-4 p-4 bg-background rounded border text-xs font-mono whitespace-pre-wrap break-words">
+                {latexCode.length > 1000 ? (
+                  <>
+                    {latexCode.substring(0, 1000)}
+                    <span className="text-muted-foreground">... (truncated, see Code view for full content)</span>
+                  </>
+                ) : latexCode}
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {textAfterCode && (
-        <div className="mt-4 prose prose-sm max-w-none dark:prose-invert">
-          <MarkdownText />
+      {textAfterCode.trim() && (
+        <div className="prose prose-sm max-w-none dark:prose-invert">
+          <p className="text-foreground">{textAfterCode.trim()}</p>
         </div>
       )}
     </div>
@@ -230,46 +272,26 @@ const LaTeXPreview: FC<{ latexCode: string; fullText: string }> = ({ latexCode, 
 };
 
 // ========================================
-// CUSTOM TEXT RENDERER
+// CUSTOM TEXT RENDERER WITH LATEX DETECTION
 // ========================================
 
-const CustomTextRenderer: FC<any> = (props) => {
-  // Extract text from various possible formats
-  // let text = '';
+const CustomTextRenderer: TextContentPartComponent = (props) => {
+  // Extract text content
   const text = props.part?.text || '';
   
-  // Debug: log the full props structure
-  console.log('📝 CustomTextRenderer - Full props:', JSON.stringify(props, null, 2));
-  
-  // // Try all possible text locations
-  // if (typeof props.part?.text === 'string') {
-  //   text = props.part.text;
-  // } else if (typeof props.text === 'string') {
-  //   text = props.text;
-  // } else if (typeof props.content === 'string') {
-  //   text = props.content;
-  // } else if (props.part?.type === 'text' && typeof props.part?.content === 'string') {
-  //   text = props.part.content;
-  // } else if (props.children && typeof props.children === 'string') {
-  //   text = props.children;
-  // }
-
-  console.log('📝 Extracted text:', text);
-
-  // Always render MarkdownText with the original props
-  // This ensures the default rendering works
-  const latexCode = text ? extractLatexCode(text) : null;
+  // Check for LaTeX code blocks
+  const latexCode = extractLatexCode(text);
 
   if (latexCode) {
     return <LaTeXPreview latexCode={latexCode} fullText={text} />;
   }
 
-  // Let MarkdownText handle the rendering with original props
+  // Default: render with MarkdownText
   return <MarkdownText {...props} />;
 };
 
 // ========================================
-// MAIN THREAD COMPONENT
+// MAIN THREAD COMPONENT (rest remains same)
 // ========================================
 
 export const Thread: FC = () => {
@@ -336,7 +358,7 @@ const ThreadWelcome: FC = () => {
             exit={{ opacity: 0, y: 10 }}
             className="aui-thread-welcome-message-motion-1 text-2xl font-semibold"
           >
-            Book Generation Assistant
+            📚 LaTeX Book Generator
           </m.div>
           <m.div
             initial={{ opacity: 0, y: 10 }}
@@ -345,7 +367,7 @@ const ThreadWelcome: FC = () => {
             transition={{ delay: 0.1 }}
             className="aui-thread-welcome-message-motion-2 text-2xl text-muted-foreground/65"
           >
-            Upload PDFs and generate LaTeX book chapters (Powered by OpenWebUI)
+            Upload PDFs and generate professional LaTeX chapters
           </m.div>
         </div>
       </div>
@@ -359,24 +381,24 @@ const ThreadSuggestions: FC = () => {
     <div className="aui-thread-welcome-suggestions grid w-full gap-2 pb-4 @md:grid-cols-2">
       {[
         {
-          title: "Generate a book chapter",
-          label: "from uploaded PDFs in LaTeX",
-          action: "Generate a book chapter about [topic] from the uploaded PDFs in LaTeX format",
+          title: "Generate chapter",
+          label: "from uploaded documents",
+          action: "Generate a book chapter in LaTeX format from the uploaded documents",
         },
         {
           title: "Create introduction",
-          label: "with proper sections",
+          label: "with proper structure",
           action: "Create an introduction chapter in LaTeX with sections for background, motivation, and objectives",
         },
         {
           title: "Format bibliography",
-          label: "from PDF references",
-          action: "Extract references from the PDFs and create a LaTeX bibliography section",
+          label: "from references",
+          action: "Extract references from the documents and create a LaTeX bibliography section",
         },
         {
-          title: "Add table of contents",
-          label: "and chapter structure",
-          action: "Create a complete LaTeX document with table of contents and chapter structure",
+          title: "Complete document",
+          label: "with TOC and chapters",
+          action: "Create a complete LaTeX book document with table of contents and multiple chapters",
         },
       ].map((suggestedAction, index) => (
         <m.div
@@ -384,7 +406,7 @@ const ThreadSuggestions: FC = () => {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 20 }}
           transition={{ delay: 0.05 * index }}
-          key={`suggested-action-${suggestedAction.title}-${index}`}
+          key={`suggested-action-${index}`}
           className="aui-thread-welcome-suggestion-display [&:nth-child(n+3)]:hidden @md:[&:nth-child(n+3)]:block"
         >
           <ThreadPrimitive.Suggestion
@@ -419,7 +441,7 @@ const Composer: FC = () => {
       <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col rounded-3xl border border-border bg-muted px-1 pt-2 shadow-[0_9px_9px_0px_rgba(0,0,0,0.01),0_2px_5px_0px_rgba(0,0,0,0.06)] dark:border-muted-foreground/15">
         <ComposerAttachments />
         <ComposerPrimitive.Input
-          placeholder="Upload PDFs and describe the book chapter you want to generate..."
+          placeholder="Upload documents and describe what you want to generate..."
           className="aui-composer-input mb-1 max-h-32 min-h-16 w-full resize-none bg-transparent px-3.5 pt-1.5 pb-3 text-base outline-none placeholder:text-muted-foreground focus:outline-primary"
           rows={1}
           autoFocus
@@ -487,10 +509,9 @@ const AssistantMessage: FC = () => {
         data-role="assistant"
       >
         <div className="aui-assistant-message-content mx-2 leading-7 break-words text-foreground">
-          {/* CRITICAL: Use MessagePrimitive.Parts with MarkdownText for Text component */}
           <MessagePrimitive.Parts
             components={{
-              Text: MarkdownText,
+              Text: CustomTextRenderer,
               tools: { Fallback: ToolFallback },
             }}
           />

@@ -1,3 +1,4 @@
+// app/assistant.tsx - Updated with proper attachment configuration
 "use client";
 
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
@@ -13,16 +14,22 @@ import { Separator } from "@/components/ui/separator";
 import {
   Breadcrumb,
   BreadcrumbItem,
-  BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { CompositeAttachmentAdapter } from "@assistant-ui/react";
+import { PDFAttachmentAdapter } from "@/lib/pdf-adapter";
+import { OpenWebUIAdapter } from "@/lib/openwebui-adapter";
 
 export function Assistant() {
-  // CRITICAL: Use useChatRuntime with simple api endpoint
+  // Create basic runtime with necessary adapters
   const runtime = useChatRuntime({
-    api: "/api/chat",
+    adapters: {
+      attachments: new CompositeAttachmentAdapter([
+        new PDFAttachmentAdapter(),
+      ])
+    }
   });
 
   return (
@@ -37,10 +44,11 @@ export function Assistant() {
               <Breadcrumb>
                 <BreadcrumbList>
                   <BreadcrumbItem className="hidden md:block">
+                    Book Generation
                   </BreadcrumbItem>
                   <BreadcrumbSeparator className="hidden md:block" />
                   <BreadcrumbItem>
-                    <BreadcrumbPage>Questions Generator</BreadcrumbPage>
+                    <BreadcrumbPage>LaTeX Generator</BreadcrumbPage>
                   </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>
