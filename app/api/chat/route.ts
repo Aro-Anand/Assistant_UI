@@ -272,7 +272,7 @@ export async function POST(req: NextRequest) {
         error: 'Failed to process chat request', 
         details: error instanceof Error ? error.message : 'Unknown error' 
       }),
-      { 
+      { 788
         status: 500,
         headers: { 'Content-Type': 'application/json' }
       }
