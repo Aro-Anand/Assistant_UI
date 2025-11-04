@@ -1,155 +1,176 @@
+// lib/openwebui-adapter.ts - FINAL FIXED VERSION
 import type { ChatModelAdapter } from "@assistant-ui/react";
 
 export class OpenWebUIAdapter implements ChatModelAdapter {
+  private fileIds: Set<string> = new Set();
+
   constructor(private apiEndpoint: string) {
-    // Bind the run method to ensure 'this' context is preserved
     this.run = this.run.bind(this);
+    console.log('✅ OpenWebUIAdapter initialized');
   }
 
-  async run({ messages, abortSignal }: { messages: any[]; abortSignal: AbortSignal }) {
-    console.log('🚀 OpenWebUIAdapter.run() called with messages:', messages);
-    console.log('📡 Endpoint:', this.apiEndpoint);
+  // Method to add file IDs
+  addFileIds(ids: string[]) {
+    ids.forEach(id => this.fileIds.add(id));
+    console.log('📎 File IDs added to adapter:', Array.from(this.fileIds));
+  }
 
-    // Generate a unique message ID
-    const messageId = `msg_${Math.random().toString(36).substr(2, 9)}`;
+  // Method to clear file IDs (call this after message is sent)
+  clearFileIds() {
+    console.log('🗑️ Clearing file IDs:', Array.from(this.fileIds));
+    this.fileIds.clear();
+  }
 
-    // Normalize messages format
-    const normalizedMessages = messages.map(msg => ({
-      role: msg.role,
-      content: typeof msg.content === 'string' ? msg.content : 
-               Array.isArray(msg.content) ? msg.content.map((p: any) => p.text).join('') : 
-               msg.content?.text || ''
-    }));
+  // Get current file IDs
+  getFileIds(): string[] {
+    return Array.from(this.fileIds);
+  }
 
-    console.log('📝 Normalized messages:', normalizedMessages);
+  async *run({ messages, abortSignal }: { messages: any[]; abortSignal: AbortSignal }) {
+    const currentFileIds = this.getFileIds();
+    
+    console.log('🚀 OpenWebUIAdapter.run() called');
+    console.log('📨 Messages count:', messages.length);
+    console.log('📎 Current file IDs:', currentFileIds);
 
-    const response = await fetch(this.apiEndpoint, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Accept': 'text/event-stream'
-      },
-      body: JSON.stringify({ messages: normalizedMessages }),
-      signal: abortSignal,
-    });
+    try {
+      // Normalize messages format
+      const normalizedMessages = messages.map(msg => {
+        let content = '';
+        
+        if (typeof msg.content === 'string') {
+          content = msg.content;
+        } else if (Array.isArray(msg.content)) {
+          content = msg.content
+            .filter((p: any) => p.type === 'text')
+            .map((p: any) => p.text || '')
+            .join('');
+        } else if (Array.isArray(msg.parts)) {
+          content = msg.parts
+            .filter((p: any) => p.type === 'text')
+            .map((p: any) => p.text || '')
+            .join('');
+        }
+        
+        return {
+          role: msg.role,
+          content: content.trim(),
+        };
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ API error:', errorText);
-      throw new Error(`API error: ${response.status} - ${errorText}`);
-    }
+      console.log('📝 Sending to API:', {
+        messagesCount: normalizedMessages.length,
+        fileIdsCount: currentFileIds.length,
+        hasFiles: currentFileIds.length > 0
+      });
 
-    if (!response.body) {
-      throw new Error('No response body');
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-
-    // Return the proper ChatModelRunResult format
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: (async function* () {
-            try {
-              let buffer = '';
-              let fullText = '';
-              let started = false;
-
-              // Helper function to format and yield events
-              function* yieldEvent(type: string, content?: string) {
-                const event = {
-                  type,
-                  id: messageId,
-                  ...(content && { delta: content })
-                };
-                return JSON.stringify(event);
-              }
-
-              // Yield initial events
-              yield* yieldEvent('start');
-              yield* yieldEvent('start-step');
-              yield* yieldEvent('text-start');
-
-              while (true) {
-                const { done, value } = await reader.read();
-                
-                if (done) {
-                  console.log('✅ Stream completed. Full text:', fullText);
-                  // Yield closing events
-                  yield* yieldEvent('text-end');
-                  yield* yieldEvent('finish-step');
-                  yield* yieldEvent('finish');
-                  break;
-                }
-
-                const chunk = decoder.decode(value, { stream: true });
-                buffer += chunk;
-
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
-
-                for (const line of lines) {
-                  const trimmedLine = line.trim();
-                  if (!trimmedLine) continue;
-
-                  console.log('📥 Received line:', trimmedLine.substring(0, 100));
-
-                  try {
-                    let content: string | undefined;
-
-                    // Format 1: OpenAI-style SSE format
-                    if (trimmedLine.startsWith('data: ')) {
-                      const data = trimmedLine.slice(6);
-                      if (data === '[DONE]') continue;
-
-                      const parsed = JSON.parse(data);
-                      content = parsed.choices?.[0]?.delta?.content;
-                    }
-                    // Format 2: AI SDK format (0:"content")
-                    else if (trimmedLine.startsWith('0:')) {
-                      const jsonContent = trimmedLine.slice(2).trim();
-                      content = JSON.parse(jsonContent);
-                    }
-                    // Format 3: Direct content format
-                    else if (!trimmedLine.startsWith('e:')) {
-                      try {
-                        const parsed = JSON.parse(trimmedLine);
-                        content = typeof parsed === 'string' ? parsed :
-                                parsed.content || parsed.text || 
-                                parsed.choices?.[0]?.message?.content ||
-                                parsed.choices?.[0]?.delta?.content;
-                      } catch {
-                        content = trimmedLine;
-                      }
-                    }
-
-                    if (content) {
-                      console.log('📝 Yielding content:', content);
-                      fullText += content;
-                      yield* yieldEvent('text-delta', content);
-                    }
-                  } catch (e) {
-                    console.error('⚠️ Parse error for line:', trimmedLine, e);
-                    // Try to salvage content even on parse error
-                    if (trimmedLine && !trimmedLine.startsWith('e:')) {
-                      console.log('🔄 Fallback: yielding as plain text');
-                      fullText += trimmedLine;
-                      yield trimmedLine;
-                    }
-                  }
-                }
-              }
-            } catch (error) {
-              console.error('❌ Stream error:', error);
-              throw error;
-            } finally {
-              reader.releaseLock();
-            }
-          })(),
+      // Make API request with file IDs
+      const response = await fetch(this.apiEndpoint, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
         },
-      ],
-    };
+        body: JSON.stringify({ 
+          messages: normalizedMessages,
+          fileIds: currentFileIds.length > 0 ? currentFileIds : undefined
+        }),
+        signal: abortSignal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ API error:', errorText);
+        throw new Error(`API error: ${response.status} - ${errorText}`);
+      }
+
+      if (!response.body) {
+        throw new Error('No response body');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      let buffer = '';
+      let accumulatedText = '';
+      let chunkCount = 0;
+
+      console.log('📡 Starting to read stream...');
+
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) {
+          console.log('✅ Stream completed');
+          console.log('📝 Total accumulated text length:', accumulatedText.length);
+          console.log('📦 Total chunks processed:', chunkCount);
+          break;
+        }
+
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (!trimmedLine) continue;
+
+          try {
+            let content: string | undefined;
+
+            // Parse SSE format from API
+            if (trimmedLine.startsWith('data: ')) {
+              const data = trimmedLine.slice(6);
+              if (data === '[DONE]') {
+                console.log('🏁 Received [DONE] marker');
+                continue;
+              }
+
+              const parsed = JSON.parse(data);
+              
+              // Handle text-delta format from our API
+              if (parsed.type === 'text-delta' && parsed.delta) {
+                content = parsed.delta;
+              }
+            }
+
+            if (content) {
+              chunkCount++;
+              accumulatedText += content;
+              
+              // Log first few chunks for debugging
+              if (chunkCount <= 5) {
+                console.log(`📦 Chunk ${chunkCount}:`, content);
+              }
+              
+              // Yield in the format assistant-ui expects
+              yield {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: accumulatedText,
+                  }
+                ],
+              };
+            }
+          } catch (e) {
+            console.error('⚠️ Parse error:', e, 'Line:', trimmedLine.substring(0, 100));
+          }
+        }
+      }
+
+      reader.releaseLock();
+      
+      // Clear file IDs after successful completion
+      if (currentFileIds.length > 0) {
+        console.log('🧹 Clearing file IDs after message completion');
+        this.clearFileIds();
+      }
+      
+    } catch (error) {
+      console.error('❌ Adapter error:', error);
+      throw error;
+    }
   }
 }
