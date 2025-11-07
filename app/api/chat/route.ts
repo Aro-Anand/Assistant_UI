@@ -1,4 +1,4 @@
-// app/api/chat/route.ts - SIMPLIFIED AND FIXED VERSION
+// app/api/chat/route.ts - WITH MCP TOOLS SUPPORT
 import { NextRequest } from 'next/server';
 import { OPENWEBUI_CONFIG, OPENWEBUI_ENDPOINTS } from '@/lib/openwebui-config';
 
@@ -10,11 +10,12 @@ export async function POST(req: NextRequest) {
   
   try {
     const body = await req.json();
-    const { messages, fileIds } = body;
+    const { messages, fileIds, tool_servers } = body;
     
     console.log('=== CHAT API START ===');
-    console.log('📨 Received messages:', messages?.length);
-    console.log('📎 File IDs:', fileIds);
+    console.log('📨 Messages:', messages?.length);
+    console.log('📎 File IDs:', fileIds?.length || 0);
+    console.log('🔧 Tool servers:', tool_servers?.length || 0);
 
     if (!messages || messages.length === 0) {
       return new Response(
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Build OpenWebUI request
+    // Build OpenWebUI request payload
     const openWebUIRequest: any = {
       model: process.env.NEXT_PUBLIC_DEFAULT_MODEL || 'gpt-4o-mini',
       messages: messages,
@@ -39,8 +40,29 @@ export async function POST(req: NextRequest) {
       console.log('📎 Including files:', openWebUIRequest.files);
     }
 
+    // CRITICAL: Add tool_servers for MCP support
+    if (tool_servers && Array.isArray(tool_servers) && tool_servers.length > 0) {
+      openWebUIRequest.tool_servers = tool_servers;
+      console.log('🔧 Including tool servers:', tool_servers.map((t: any) => ({
+        url: t.url,
+        toolCount: t.specs?.length || 0
+      })));
+    }
+
+    // Add other required parameters from your payload
+    openWebUIRequest.params = {};
+    openWebUIRequest.features = {
+      image_generation: false,
+      code_interpreter: false,
+      web_search: false
+    };
+
     const openwebuiUrl = `${OPENWEBUI_CONFIG.baseUrl}${OPENWEBUI_ENDPOINTS.chat}`;
     console.log('🌐 Calling:', openwebuiUrl);
+    console.log('📤 Full payload:', JSON.stringify({
+      ...openWebUIRequest,
+      messages: `[${openWebUIRequest.messages.length} messages]`
+    }, null, 2));
 
     const response = await fetch(openwebuiUrl, {
       method: 'POST',
@@ -95,6 +117,7 @@ export async function POST(req: NextRequest) {
               
               try {
                 let content: string | undefined;
+                let toolCalls: any[] | undefined;
                 
                 // Parse OpenWebUI SSE format
                 if (line.startsWith('data: ')) {
@@ -102,11 +125,28 @@ export async function POST(req: NextRequest) {
                   if (data === '[DONE]') continue;
                   
                   const parsed = JSON.parse(data);
+                  
+                  // Check for text content
                   content = parsed.choices?.[0]?.delta?.content;
+                  
+                  // Check for tool calls
+                  toolCalls = parsed.choices?.[0]?.delta?.tool_calls;
+                  
+                  if (toolCalls) {
+                    console.log('🔧 Tool calls in stream:', toolCalls);
+                    // Forward tool calls to client
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify({
+                        type: 'tool-call',
+                        id: messageId,
+                        tool_calls: toolCalls
+                      })}\n\n`)
+                    );
+                  }
                 }
 
                 if (content) {
-                  // Send in SSE format with text-delta type
+                  // Send text content
                   const event = {
                     type: 'text-delta',
                     id: messageId,

@@ -9,4 +9,5 @@ export const OPENWEBUI_ENDPOINTS = {
   uploadFile: '/api/v1/files/',
   files: '/api/v1/files',
   knowledge: '/api/v1/knowledge',
+  tools: '/api/v1/tools'
 };
